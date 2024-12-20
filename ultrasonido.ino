@@ -8,7 +8,7 @@ int releValvula = 13;      // Pin del relé válvula
 int relepin2 = 11;         // Pin del relé motobomba
 int ledPin = 2;            // LED para estado de la motobomba
 int ledPin2 = 3;           // LED para la segunda condición
-int ledPin3 = 4;   
+int ledPin3 = 4;           // LED para la tercera condición
 int sensorIRPin = 6;       // Pin del sensor infrarrojo
 
 // Pines del sensor ultrasónico
@@ -20,6 +20,8 @@ int objectCount = 0;       // Contador de objetos detectados
 bool objectDetected = false; // Estado de detección infrarrojo
 long duration;             // Duración del pulso ultrasónico
 float distance;            // Distancia medida en cm
+bool motobombaDesactivada = false; // Bandera para desactivar la motobomba permanentemente
+float caudal = 0.0;        // Variable para almacenar el caudal aleatorio
 
 void mensajeInicio() {
   lcd.setCursor(0, 0);
@@ -28,22 +30,23 @@ void mensajeInicio() {
   lcd.clear();
 }
 
-void mensajeLleno() {
-  lcd.clear();
-  lcd.setCursor(2, 0);
-  lcd.print("Tanque lleno");
-  delay(500);
-}
-
 void mensajeDistanciaAgua() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Dist:");
+  lcd.print("D:");
   lcd.print(distance);
   lcd.print("cm");
-  lcd.setCursor(0, 1);
-  lcd.print("Vasos:");
+  lcd.setCursor(11, 0);
+  lcd.print("CV:");
   lcd.print(objectCount);
+}
+
+void mensajeCaudal() {
+  lcd.clear();
+  lcd.setCursor(0, 0); // Fila 2, columna 0
+  lcd.print("Caudal: ");
+  lcd.print(caudal, 2);  // Mostrar el caudal con 2 decimales
+  lcd.print(" ml/s");
 }
 
 void setup() {
@@ -53,18 +56,18 @@ void setup() {
   lcd.clear();
 
   // Configuración de pines
-  pinMode(releValvula, OUTPUT); // Configurar el pin del relé como salida
-  digitalWrite(releValvula, LOW); // Asegurarse de que el relé esté inicialmente apagado
-  pinMode(relepin2, OUTPUT);     // Configurar el pin del relé como salida
-  digitalWrite(relepin2, LOW);   // Asegurarse de que el relé esté inicialmente apagado
+  pinMode(releValvula, OUTPUT);
+  digitalWrite(releValvula, HIGH); // Asegurarse de que la válvula esté cerrada
+  pinMode(relepin2, OUTPUT);
+  digitalWrite(relepin2, LOW);
   pinMode(sensorIRPin, INPUT);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-  pinMode(ledPin, OUTPUT); 
-  pinMode(ledPin2, OUTPUT); 
-  pinMode(ledPin3, OUTPUT); 
- 
-  // Mensaje de inicio en LCD
+  pinMode(ledPin, OUTPUT);
+  pinMode(ledPin2, OUTPUT);
+  pinMode(ledPin3, OUTPUT);
+
+  // Mensaje de inicio
   mensajeInicio();
 }
 
@@ -77,39 +80,37 @@ void loop() {
   digitalWrite(trigPin, LOW);
   duration = pulseIn(echoPin, HIGH);
   distance = (duration * 0.0343) / 2;
-  
-  
+
   // Mostrar distancia en el LCD
   mensajeDistanciaAgua();
 
   // *** Lógica para la motobomba y LED ***
-  if (distance >= 3.5 && distance <= 4.5) {
-    // Si el nivel está por debajo de 5.21 cm, apagar la motobomba y encender el LED
-    digitalWrite(ledPin, LOW);   // Encender el primer LED
+  if (!motobombaDesactivada && distance >= 3.5 && distance <= 4.5) {
+    digitalWrite(relepin2, LOW);  // Apagar la motobomba
+    digitalWrite(ledPin, LOW);    // Encender LED de "Lleno"
     digitalWrite(ledPin2, HIGH);
     digitalWrite(ledPin3, HIGH);
-    digitalWrite(relepin2, LOW);  // Motobomba apagada
-    
-    //mensajeLleno();
-  } else if (distance >= 11.01 && distance <= 12.06) {
-    // Si la distancia está entre 11.01 cm y 12.06 cm
-     digitalWrite(ledPin, HIGH);
-    digitalWrite(ledPin3, HIGH);
-    digitalWrite(ledPin2, LOW); // Encender el segundo LED
-   
-  } else if (distance >= 13.34 && distance <= 15.21) {
-    digitalWrite(ledPin, HIGH);
-    digitalWrite(ledPin2, HIGH);
-    digitalWrite(ledPin3, LOW); // Encender el tercer LED   
-   
-  } 
-  else {
-    // Si el nivel no está en ninguna de las condiciones anteriores
-    digitalWrite(relepin2, HIGH); // Motobomba encendida
-    digitalWrite(releValvula, HIGH);
-    digitalWrite(ledPin, HIGH);
-    digitalWrite(ledPin2, HIGH);
-    digitalWrite(ledPin3, HIGH);
+    motobombaDesactivada = true; // Desactivar permanentemente la motobomba
+  }
+
+  if (!motobombaDesactivada) {
+    // Solo controlar la motobomba si no está desactivada permanentemente
+    if (distance >= 10.59 && distance <= 11.27) {
+      digitalWrite(ledPin, HIGH);
+      digitalWrite(ledPin3, HIGH);
+      digitalWrite(ledPin2, LOW); // Encender el segundo LED
+    } else if (distance >= 13.34 && distance <= 15.21) {
+      digitalWrite(ledPin, HIGH);
+      digitalWrite(ledPin2, HIGH);
+      digitalWrite(ledPin3, LOW); // Encender el tercer LED
+    } else {
+      // Condición por defecto
+      digitalWrite(relepin2, HIGH); // Encender la motobomba
+      digitalWrite(releValvula, HIGH);
+      digitalWrite(ledPin, HIGH);
+      digitalWrite(ledPin2, HIGH);
+      digitalWrite(ledPin3, HIGH);
+    }
   }
 
   // *** Lectura del sensor infrarrojo ***
@@ -118,12 +119,16 @@ void loop() {
   if (sensorState == HIGH && !objectDetected) {
     // Si el sensor detecta un objeto y no ha sido detectado previamente
     digitalWrite(releValvula, LOW); // Abrir válvula
-    delay(5000);                    // Mantener abierta la válvula
+    caudal = random(125, 246) / 100.0; // Generar un caudal aleatorio entre 1.25 y 2.45
+    mensajeCaudal();  // Mostrar caudal en el LCD
+    
+    delay(3000); // Mantener abierta la válvula por 3 segundos
+    digitalWrite(releValvula, HIGH); // Cerrar válvula automáticamente
+    
     objectCount++;                  // Incrementar contador de objetos
     objectDetected = true;          // Marcar objeto detectado
   } else if (sensorState == LOW && objectDetected) {
     // Si el sensor deja de detectar un objeto
-    digitalWrite(releValvula, HIGH); // Cerrar válvula
     objectDetected = false;         // Reiniciar estado
   }
 
